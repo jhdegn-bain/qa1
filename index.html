@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data QA Checker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0f1117;
+    --surface: #161922;
+    --surface-alt: #1d2130;
+    --border: #272c3f;
+    --border-light: #313650;
+    --text: #dde1f0;
+    --muted: #656d91;
+    --input-bg: #0d0f18;
+    --accent: #4d9de0;
+    --red: #E24B4A;
+    --orange: #e0832a;
+    --green: #4caf72;
+    --teal: #4dcea0;
+    --pink: #c05c8a;
+    --purple: #9b8af4;
+    --yellow: #e0c44d;
+  }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh; padding: 1.25rem 1rem; }
+  .wrap { max-width: 700px; margin: 0 auto; }
+  h2 { font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.85rem 1rem; }
+  .stack { display: flex; flex-direction: column; gap: 12px; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: none; }
+  input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+  label { font-size: 13px; color: var(--text); cursor: pointer; }
+  button { border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px; font-weight: 500; transition: opacity .15s; }
+  button:hover { opacity: .85; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .btn { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn-accent { background: var(--accent); color: #fff; border: none; }
+  .btn-green { background: #3a7d44; color: #fff; border: none; }
+  .btn-tinted { border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px; font-weight: 500; }
+  select, input[type=text], input[type=number] { background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 8px; font-size: 13px; outline: none; font-family: inherit; }
+  select { cursor: pointer; font-size: 12px; padding: 4px 6px; }
+  input[type=number] { width: 80px; }
+  .tag { border-radius: 6px; padding: 2px 8px; font-size: 11px; font-weight: 500; white-space: nowrap; display: inline-block; }
+  .tabs { display: flex; gap: 2px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px; padding: 4px; width: fit-content; margin-bottom: 4px; }
+  .tab { background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: 7px; padding: 6px 16px; cursor: pointer; font-size: 13px; font-weight: 400; transition: all .15s; }
+  .tab.active { background: var(--surface); color: #fff; border-color: var(--border); font-weight: 500; }
+  .progress-bar { background: var(--border); border-radius: 99px; height: 8px; overflow: hidden; position: relative; }
+  .progress-fill { height: 100%; border-radius: 99px; transition: width .25s ease; position: relative; overflow: hidden; }
+  .progress-shimmer { position: absolute; top: 0; left: 0; height: 100%; width: 25%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.35), transparent); border-radius: 99px; animation: shimmer 1.6s ease-in-out infinite; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; border: 1px solid transparent; font-weight: 500; }
+  .col-chip { padding: 4px 10px; font-size: 12px; border-radius: 8px; cursor: pointer; font-weight: 500; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th { text-align: left; padding: 6px 8px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+  td { padding: 5px 8px; }
+  .tbl-border td, .tbl-border th { border-right: 1px solid var(--border); }
+  .tbl-border td:last-child, .tbl-border th:last-child { border-right: none; }
+  tr.stripe:nth-child(even) { background: var(--surface-alt); }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .metric { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 8px; padding: .65rem .75rem; }
+  .metric-label { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .metric-val { font-size: 22px; font-weight: 600; }
+  .hidden { display: none !important; }
+  #drop-zone { border: 1.5px dashed var(--border-light); text-align: center; padding: 3rem 1rem; cursor: pointer; display: block; border-radius: 12px; background: var(--surface); transition: border-color .15s; }
+  #drop-zone:hover, #drop-zone.drag { border-color: var(--accent); }
+  #drop-zone .icon { font-size: 30px; margin-bottom: 8px; }
+  #drop-zone p { font-weight: 500; color: #fff; margin-bottom: 4px; }
+  #drop-zone small { color: var(--muted); font-size: 12px; }
+  .scrollable { overflow: auto; }
+  .issue-table-wrap { max-height: 300px; overflow-y: auto; overflow-x: auto; border-radius: 6px; border: 1px solid var(--border); }
+  .preview-wrap { overflow-x: auto; overflow-y: auto; max-height: 420px; border-radius: 6px; border: 1px solid var(--border); }
+  .flex-gap { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .section-title { font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+  .notice { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .rule-row { display: flex; align-items: center; gap: 8px; font-size: 12px; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; margin-bottom: 4px; }
+  .del-btn { background: none; border: none; cursor: pointer; color: var(--red); font-size: 15px; padding: 0; margin-left: auto; }
+  code { font-size: 11px; background: var(--input-bg); color: var(--purple); padding: 1px 5px; border-radius: 4px; }
+  @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
+  @keyframes indeterminate { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  @keyframes dotFade { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+  .dot { display: inline-block; opacity: 0; }
+  .dot:nth-child(1) { animation: dotFade 1.5s ease-in-out 0s infinite; }
+  .dot:nth-child(2) { animation: dotFade 1.5s ease-in-out 0.4s infinite; }
+  .dot:nth-child(3) { animation: dotFade 1.5s ease-in-out 0.8s infinite; }
+  .indent { padding-left: 24px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .small-btn { padding: 4px 10px !important; font-size: 12px !important; }
+  .grouped-col-selects { display: flex; gap: 8px; flex-wrap: wrap; }
+  .grouped-col-selects > div { display: flex; flex-direction: column; gap: 4px; }
+  .grouped-col-selects label { font-size: 11px; color: var(--muted); }
+  @media (max-width: 500px) { .metrics { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2>Data QA Checker</h2>
+  <p class="subtitle" id="subtitle">Upload a CSV, Excel, or JSON file to get started.</p>
+
+  <!-- UPLOAD -->
+  <div id="pane-upload">
+    <label id="drop-zone">
+      <div class="icon">📂</div>
+      <p>Drop a file here or click to browse</p>
+      <small>CSV · Excel (.xlsx / .xls) · JSON</small>
+      <input type="file" id="file-input" accept=".csv,.xlsx,.xls,.json" style="display:none">
+    </label>
+  </div>
+
+  <!-- LOADING -->
+  <div id="pane-loading" class="hidden">
+    <div class="card" style="text-align:center;padding:2.5rem 1.5rem">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:16px">Parsing file, please wait…</div>
+      <div class="progress-bar">
+        <div style="background:linear-gradient(90deg,var(--accent),var(--teal));height:100%;width:100%;border-radius:99px;animation:indeterminate 1.4s ease infinite;background-size:200% 100%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RUNNING -->
+  <div id="pane-running" class="hidden">
+    <div class="card" style="text-align:center;padding:2.5rem 1.5rem">
+      <div id="run-rows-msg" style="font-size:13px;color:var(--muted);margin-bottom:16px"></div>
+      <div class="progress-bar" style="margin-bottom:8px">
+        <div class="progress-fill" id="prog-fill" style="background:linear-gradient(90deg,var(--accent),var(--teal));width:0%">
+          <div class="progress-shimmer"></div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <span id="prog-msg" style="font-size:12px;color:var(--muted);font-style:italic">Preparing<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>
+        <span id="prog-pct" style="font-size:13px;color:var(--accent);font-weight:500">0%</span>
+      </div>
+      <button class="btn small-btn" id="btn-cancel">Cancel</button>
+    </div>
+  </div>
+
+  <!-- CONFIGURE -->
+  <div id="pane-configure" class="hidden">
+    <div class="tabs" style="margin-bottom:12px">
+      <button class="tab active" data-tab="cfg-configure">Configure</button>
+      <button class="tab" data-tab="cfg-preview">File Preview</button>
+    </div>
+    <div id="cfg-preview" class="hidden stack"></div>
+    <div id="cfg-configure" class="stack">
+      <!-- Columns -->
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-weight:500;font-size:13px;color:#fff">Columns to check</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn small-btn" id="btn-all-cols">All</button>
+            <button class="btn small-btn" id="btn-no-cols">None</button>
+          </div>
+        </div>
+        <div id="col-chips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+      </div>
+      <!-- Checks -->
+      <div class="card">
+        <div class="section-title" style="color:#fff">Checks to run</div>
+        <div class="row">
+          <input type="checkbox" id="ck-missing" checked>
+          <label for="ck-missing">Missing / null values</label>
+          <div id="missing-thresh-wrap" style="margin-left:auto;display:flex;align-items:center;gap:6px">
+            <span style="font-size:12px;color:var(--muted)">Flag if &gt;</span>
+            <input type="number" id="missing-threshold" value="0" min="0" max="100" style="width:52px;text-align:center">
+            <span style="font-size:12px;color:var(--muted)">% missing</span>
+          </div>
+        </div>
+        <div class="row"><input type="checkbox" id="ck-dup" checked><label for="ck-dup">Duplicate rows</label></div>
+        <div class="row"><input type="checkbox" id="ck-type" checked><label for="ck-type">Data type validation</label></div>
+        <div class="row"><input type="checkbox" id="ck-outlier" checked><label for="ck-outlier">Outlier detection (IQR)</label></div>
+        <div class="row"><input type="checkbox" id="ck-empty" checked><label for="ck-empty">Empty column detection</label></div>
+        <div class="row" style="flex-wrap:wrap"><input type="checkbox" id="ck-colpres"><label for="ck-colpres">Column presence check</label></div>
+        <div id="colpres-config" class="indent hidden" style="margin-top:6px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Required columns (flag if missing from file)</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+            <input type="text" id="new-req-col" placeholder="Column name…" style="flex:1;min-width:160px">
+            <button class="btn-accent small-btn" id="btn-add-req-col" style="border-radius:6px">Add</button>
+          </div>
+          <div id="req-cols-list" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        </div>
+        <div class="row" style="flex-wrap:wrap"><input type="checkbox" id="ck-rowcount"><label for="ck-rowcount">Row count validation</label></div>
+        <div id="rowcount-config" class="indent hidden" style="margin-top:6px">
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <button class="btn small-btn" id="btn-mode-total" style="background:var(--accent)22;color:var(--accent);border-color:var(--accent)55">Total row count</button>
+            <button class="btn small-btn" id="btn-mode-grouped">Grouped by column</button>
+          </div>
+          <div id="rc-total">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:12px;color:var(--muted)">Expected minimum rows:</span>
+              <input type="number" id="rc-expected" min="0" value="">
+            </div>
+          </div>
+          <div id="rc-grouped" class="hidden">
+            <p style="font-size:12px;color:var(--muted);margin-bottom:8px">Select the column to group by, and the column that contains the expected row count for each group.</p>
+            <div class="grouped-col-selects">
+              <div><label>Group by column</label><select id="rc-group-col"><option value="">Select…</option></select></div>
+              <div><label>Expected count column</label><select id="rc-count-col"><option value="">Select…</option></select></div>
+            </div>
+            <div id="rc-grouped-extra" class="hidden" style="margin-top:8px">
+              <p id="rc-group-desc" style="font-size:12px;color:var(--muted);margin-bottom:8px"></p>
+              <div style="background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input type="checkbox" id="ck-dedupe">
+                  <label for="ck-dedupe" style="font-weight:500">Dedupe rows before counting</label>
+                </div>
+                <div id="dedupe-config" class="hidden">
+                  <p style="font-size:12px;color:var(--muted);margin-bottom:6px">Select column(s) to dedupe on within each group. The original file is not modified.</p>
+                  <div id="dedupe-chips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+                  <p id="dedupe-summary" style="font-size:12px;color:var(--teal);margin-top:6px;display:none"></p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Whitelist -->
+      <div class="card">
+        <div style="font-weight:500;font-size:13px;margin-bottom:4px;color:#fff">Allowed values (whitelist)</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:8px">Flag values in a column that aren't in a defined allowed list.</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+          <select id="wl-col" style="flex:1;min-width:100px"><option value="">Column…</option></select>
+          <input type="text" id="wl-vals" placeholder="Values (comma-separated)" style="flex:3;min-width:200px">
+          <button class="btn-accent small-btn" id="btn-add-wl" style="border-radius:6px">Add</button>
+        </div>
+        <div id="wl-list"></div>
+      </div>
+      <!-- Custom rules -->
+      <div class="card">
+        <div style="font-weight:500;font-size:13px;margin-bottom:4px;color:#fff">Custom regex rules</div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:8px">Flag values that don't match a custom pattern.</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+          <select id="rule-col" style="flex:1;min-width:100px"><option value="">Column…</option></select>
+          <input type="text" id="rule-pattern" placeholder="Pattern (e.g. ^\d+$)" style="flex:2;min-width:140px">
+          <input type="text" id="rule-name" placeholder="Name (optional)" style="flex:1;min-width:100px">
+          <button class="btn-accent small-btn" id="btn-add-rule" style="border-radius:6px">Add</button>
+        </div>
+        <div id="rule-list"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-green" id="btn-run">Run QA checks</button>
+        <button class="btn" id="btn-back-upload">Back</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESULTS -->
+  <div id="pane-results" class="hidden stack">
+    <div class="tabs" style="margin-bottom:4px">
+      <button class="tab active" data-tab="res-results">QA Results</button>
+      <button class="tab" data-tab="res-preview">File Preview</button>
+    </div>
+    <div id="res-preview" class="hidden"></div>
+    <div id="res-results" class="stack">
+      <div class="metrics" id="metrics"></div>
+      <div id="type-counts" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+      <div id="file-notices" class="card hidden" style="border-left:3px solid var(--teal)">
+        <div class="section-title" style="color:var(--teal)">File-level notices</div>
+        <div id="file-notices-list" class="stack"></div>
+      </div>
+      <div class="card" style="border-left:3px solid var(--accent)">
+        <div class="section-title" style="color:var(--accent)">Column summary</div>
+        <div class="scrollable">
+          <table id="col-summary-table" style="table-layout:fixed">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border)">
+                <th style="width:130px">Column</th><th style="width:70px">Type</th><th style="width:90px">Missing</th><th style="width:80px">Duplicates</th><th style="width:72px">Outliers</th><th style="width:60px">Issues</th>
+              </tr>
+            </thead>
+            <tbody id="col-summary-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card" style="border-left:3px solid var(--red)">
+        <div style="font-weight:600;font-size:13px;color:var(--red);margin-bottom:10px">
+          Row-level issues <span id="filter-count" style="color:var(--muted);font-weight:400;font-size:12px"></span>
+        </div>
+        <div class="flex-gap" style="margin-bottom:10px">
+          <div style="display:flex;align-items:center;gap:5px">
+            <span style="font-size:12px;color:var(--muted)">Column:</span>
+            <select id="filter-col"><option value="all">All</option></select>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px">
+            <span style="font-size:12px;color:var(--muted)">Type:</span>
+            <select id="filter-type"><option value="all">All</option></select>
+          </div>
+          <button class="btn small-btn hidden" id="btn-clear-filters">Clear filters</button>
+        </div>
+        <div class="issue-table-wrap">
+          <table id="issues-table" style="min-width:500px">
+            <thead style="position:sticky;top:0;background:var(--surface-alt);z-index:1">
+              <tr style="border-bottom:1px solid var(--border-light)">
+                <th style="min-width:44px">Row</th><th style="min-width:100px">Column</th><th style="min-width:90px">Type</th><th style="min-width:200px">Message</th>
+              </tr>
+            </thead>
+            <tbody id="issues-body"></tbody>
+          </table>
+          <p id="no-issues-msg" class="hidden" style="color:var(--muted);text-align:center;padding:.75rem 0;font-size:13px">No issues match the current filter.</p>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-accent" id="btn-download">Download CSV</button>
+        <button class="btn" id="btn-back-config">Back</button>
+        <button class="btn" id="btn-new-file">New file</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+let fileName = "", headers = [], rows = [], selectedCols = [];
+let whitelists = [], customRules = [], results = null;
+let rowCountMode = "total", dedupeCols = [];
+let cancelled = false;
+let filterCol = "all", filterType = "all";
+
+const ISSUE_CLR = { missing:"#E24B4A", type:"#e0832a", outlier:"#4d9de0", duplicate:"#c05c8a", custom:"#9b8af4", whitelist:"#e0c44d", row_count:"#4dcea0", missing_col:"#e0832a", empty_col:"#c05c8a" };
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const $  = id => document.getElementById(id);
+const el = (tag, attrs={}, children=[]) => {
+  const e = document.createElement(tag);
+  Object.entries(attrs).forEach(([k,v]) => { if(k==="style") Object.assign(e.style,v); else if(k==="className") e.className=v; else e[k]=v; });
+  children.forEach(c => e.append(typeof c==="string" ? document.createTextNode(c) : c));
+  return e;
+};
+const tag = (text, color) => {
+  const s = el("span",{className:"tag"});
+  s.textContent = text;
+  s.style.cssText = `background:${color}28;color:${color};border:0.5px solid ${color}44`;
+  return s;
+};
+const showPane = id => ["upload","loading","running","configure","results"].forEach(p => $(`pane-${p}`).classList.toggle("hidden", p!==id));
+
+function cleanNumeric(v) { return String(v).replace(/[$€£¥,\s%]/g,""); }
+
+function inferType(vals) {
+  const ne = vals.filter(v => v!==""&&v!==null&&v!==undefined);
+  if(!ne.length) return "unknown";
+  const c={number:0,date:0,string:0};
+  ne.forEach(v=>{
+    const cl=cleanNumeric(v);
+    if(!isNaN(Number(cl))&&cl!=="") c.number++;
+    else if(!isNaN(Date.parse(v))&&/\d{4}|\d{2}\/\d{2}/.test(String(v))) c.date++;
+    else c.string++;
+  });
+  const dom=Object.entries(c).sort((a,b)=>b[1]-a[1])[0][0];
+  if(dom==="number"&&c.number/ne.length>=0.6) return "number";
+  if(dom==="date"&&c.date/ne.length>=0.6) return "date";
+  return "string";
+}
+
+function parseCSV(text) {
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length) return {headers:[],rows:[]};
+  const headers=lines[0].split(",").map(h=>h.trim().replace(/^"|"$/g,""));
+  const rows=lines.slice(1).map(line=>{
+    const vals=[];let cur="",inQ=false;
+    for(let i=0;i<line.length;i++){
+      if(line[i]==='"')inQ=!inQ;
+      else if(line[i]===","&&!inQ){vals.push(cur.trim());cur="";}
+      else cur+=line[i];
+    }
+    vals.push(cur.trim());
+    return headers.reduce((obj,h,i)=>{obj[h]=vals[i]??"";return obj;},{});
+  });
+  return {headers,rows};
+}
+
+// ─── File loading ─────────────────────────────────────────────────────────────
+async function loadFile(file) {
+  fileName=file.name;
+  $("subtitle").textContent=`Parsing "${fileName}"…`;
+  showPane("loading");
+  const ext=file.name.split(".").pop().toLowerCase();
+  try {
+    if(ext==="csv"){
+      const text=await file.text();
+      ({headers,rows}=parseCSV(text));
+    } else if(ext==="json"){
+      const text=await file.text();
+      const data=JSON.parse(text);
+      const arr=Array.isArray(data)?data:Object.values(data)[0];
+      headers=Object.keys(arr[0]||{});rows=arr;
+    } else if(ext==="xlsx"||ext==="xls"){
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:"array",cellDates:false,sheetStubs:false});
+      const data=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:"",raw:false});
+      headers=Object.keys(data[0]||{});rows=data;
+    }
+    selectedCols=[...headers];
+    setupConfigure();
+    showPane("configure");
+    $("subtitle").textContent=`${rows.length} rows · ${headers.length} columns · "${fileName}"`;
+  } catch(err){
+    alert("Failed to load file: "+err.message);
+    showPane("upload");
+    $("subtitle").textContent="Upload a CSV, Excel, or JSON file to get started.";
+  }
+}
+
+// ─── Configure setup ──────────────────────────────────────────────────────────
+function setupConfigure() {
+  // Col chips
+  renderColChips();
+  // Populate selects
+  ["wl-col","rule-col","rc-group-col","rc-count-col"].forEach(id=>{
+    const s=$(id); s.innerHTML='<option value="">'+( id.startsWith("rc") ? "Select…" : "Column…")+'</option>';
+    headers.forEach(h=>{const o=document.createElement("option");o.value=o.textContent=h;s.append(o);});
+  });
+  // Render configure preview
+  $("cfg-preview").innerHTML="";
+  $("cfg-preview").append(buildPreviewTable(false));
+}
+
+function renderColChips() {
+  const wrap=$("col-chips"); wrap.innerHTML="";
+  headers.forEach(h=>{
+    const active=selectedCols.includes(h);
+    const b=el("button",{className:"col-chip"});
+    b.textContent=h;
+    styleChip(b, active);
+    b.onclick=()=>{ toggleCol(h); };
+    wrap.append(b);
+  });
+}
+
+function styleChip(b, active) {
+  const accent="#4d9de0";
+  if(active){
+    b.style.cssText=`background:${accent}22;color:${accent};border:1px solid ${accent}55;font-weight:500`;
+  } else {
+    b.style.cssText=`background:transparent;color:var(--text);border:1px solid var(--border);font-weight:500`;
+  }
+}
+
+function toggleCol(col){
+  if(selectedCols.includes(col)) selectedCols=selectedCols.filter(c=>c!==col);
+  else selectedCols.push(col);
+  renderColChips();
+}
+
+// ─── Preview table ────────────────────────────────────────────────────────────
+function buildPreviewTable(showIssues) {
+  const wrap=el("div",{className:"card"});
+  const hdr=el("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}});
+  hdr.append(el("span",{style:{fontWeight:"600",fontSize:"13px",color:"#fff"}},"File preview"));
+  hdr.append(el("span",{style:{fontSize:"12px",color:"var(--muted)"}},[`${rows.length} rows · ${headers.length} columns`]));
+  wrap.append(hdr);
+  const pw=el("div",{className:"preview-wrap"});
+  const tbl=el("table",{className:"tbl-border"});
+  const thead=el("thead",{style:{position:"sticky",top:"0",background:"var(--surface-alt)",zIndex:"2"}});
+  const hr=el("tr",{style:{borderBottom:"1px solid var(--border-light)"}});
+  hr.append(el("th",{style:{minWidth:"40px",borderRight:"1px solid var(--border)"}},"#"));
+  headers.forEach(h=>{
+    const th=el("th",{style:{minWidth:"100px",borderRight:"1px solid var(--border)"}});
+    th.append(document.createTextNode(h));
+    if(!selectedCols.includes(h)){
+      const badge=el("span",{style:{marginLeft:"5px",fontSize:"10px",color:"var(--muted)",background:"var(--border)",borderRadius:"4px",padding:"1px 5px"}},"excluded");
+      th.append(badge);
+    }
+    hr.append(th);
+  });
+  thead.append(hr); tbl.append(thead);
+  const tbody=el("tbody");
+  rows.slice(0,100).forEach((row,i)=>{
+    const tr=el("tr",{style:{borderBottom:"1px solid var(--border)",background:i%2?"var(--surface-alt)":"transparent"}});
+    const numTd=el("td",{style:{padding:"5px 10px",color:"var(--muted)",borderRight:"1px solid var(--border)",textAlign:"right"}},[(i+2).toString()]);
+    tr.append(numTd);
+    headers.forEach(h=>{
+      const v=row[h];
+      const isEmpty=v===""||v===null||v===undefined||String(v).trim()==="";
+      const hasIssue=showIssues&&results&&results.issues.some(iss=>iss.row===i+2&&iss.col===h);
+      const td=el("td",{style:{padding:"5px 10px",whiteSpace:"nowrap",borderRight:"1px solid var(--border)",
+        color:isEmpty?"var(--muted)":hasIssue?"#E24B4A":"var(--text)",
+        background:hasIssue?"#E24B4A11":"transparent",fontStyle:isEmpty?"italic":"normal"}});
+      td.textContent=isEmpty?"null":String(v);
+      tr.append(td);
+    });
+    tbody.append(tr);
+  });
+  tbl.append(tbody); pw.append(tbl); wrap.append(pw);
+  if(rows.length>100){
+    const note=el("p",{style:{fontSize:"12px",color:"var(--muted)",marginTop:"8px",textAlign:"center"}},
+      [`Showing first 100 of ${rows.length} rows`]);
+    wrap.append(note);
+  }
+  return wrap;
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+function setupTabs(tabsEl, panes) {
+  tabsEl.querySelectorAll(".tab").forEach(btn=>{
+    btn.onclick=()=>{
+      tabsEl.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+      btn.classList.add("active");
+      const id=btn.dataset.tab;
+      panes.forEach(p=>$(p).classList.toggle("hidden", p!==id));
+    };
+  });
+}
+
+// ─── Run QA ───────────────────────────────────────────────────────────────────
+function setProgress(pct, msg) {
+  $("prog-fill").style.width=pct+"%";
+  $("prog-pct").textContent=pct+"%";
+  const msgEl=$("prog-msg");
+  msgEl.innerHTML=msg.replace(/\.+$/,"")+'<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
+}
+
+function runQA() {
+  cancelled=false;
+  setProgress(0,"Preparing checks");
+  showPane("running");
+  $("run-rows-msg").textContent=`Analysing ${rows.length.toLocaleString()} rows across ${selectedCols.length} columns…`;
+  $("subtitle").textContent=`Running checks on ${rows.length.toLocaleString()} rows…`;
+
+  const checkMissing=$("ck-missing").checked;
+  const missingThreshold=Math.min(100,Math.max(0,Number($("missing-threshold").value)||0));
+  const checkDup=$("ck-dup").checked;
+  const checkType=$("ck-type").checked;
+  const checkOutlier=$("ck-outlier").checked;
+  const checkEmpty=$("ck-empty").checked;
+  const checkColPres=$("ck-colpres").checked;
+  const reqCols=[...$("req-cols-list").querySelectorAll(".req-col-val")].map(e=>e.dataset.col);
+  const checkRowCount=$("ck-rowcount").checked;
+  const rcExpected=Number($("rc-expected").value);
+  const rcGroupCol=$("rc-group-col").value;
+  const rcCountCol=$("rc-count-col").value;
+  const dedupeEnabled=$("ck-dedupe").checked;
+
+  setTimeout(()=>{
+    const issues=[], colStats={};
+
+    // Column presence
+    if(checkColPres) reqCols.forEach(col=>{ if(!headers.includes(col)) issues.push({row:"—",col,type:"missing_col",msg:`Required column "${col}" not found in file`}); });
+
+    // Col stats
+    setProgress(5,"Analysing column types");
+    selectedCols.forEach(col=>{
+      const vals=rows.map(r=>r[col]);
+      const type=inferType(vals);
+      const missing=vals.filter(v=>v===""||v===null||v===undefined||String(v).trim()==="").length;
+      const nums=type==="number"?vals.filter(v=>v!==""&&!isNaN(Number(cleanNumeric(v)))).map(v=>Number(cleanNumeric(v))):[];
+      let lo,hi;
+      if(nums.length>3){
+        const s=[...nums].sort((a,b)=>a-b);
+        const q1=s[Math.floor(s.length*0.25)],q3=s[Math.floor(s.length*0.75)];
+        const iqr=q3-q1; lo=q1-1.5*iqr; hi=q3+1.5*iqr;
+      }
+      colStats[col]={type,missing,total:vals.length,lo,hi};
+    });
+
+    // Empty columns
+    setProgress(15,"Checking for empty columns");
+    if(checkEmpty) selectedCols.forEach(col=>{ if(colStats[col].missing===colStats[col].total) issues.push({row:"—",col,type:"empty_col",msg:`Column "${col}" is entirely empty`}); });
+
+    setProgress(20,"");
+    const BATCH=200, total=rows.length; let i=0;
+
+    function processBatch(){
+      if(cancelled) return;
+      const end=Math.min(i+BATCH,total);
+      for(;i<end;i++){
+        const row=rows[i];
+        selectedCols.forEach(col=>{
+          const v=row[col],stat=colStats[col];
+          const isEmpty=v===""||v===null||v===undefined||String(v).trim()==="";
+          if(checkMissing&&isEmpty){
+            if((stat.missing/stat.total)*100>missingThreshold) issues.push({row:i+2,col,type:"missing",msg:"Missing value"});
+          } else if(!isEmpty){
+            if(checkType&&stat.type==="number"){
+              const cl=cleanNumeric(v);
+              if(isNaN(Number(cl))||cl==="") issues.push({row:i+2,col,type:"type",msg:`Expected number, got "${v}"`});
+            }
+            if(checkOutlier&&stat.type==="number"&&stat.lo!==undefined){
+              const n=Number(cleanNumeric(v));
+              if(!isNaN(n)&&(n<stat.lo||n>stat.hi)) issues.push({row:i+2,col,type:"outlier",msg:`${n} is an outlier (${stat.lo.toFixed(1)}–${stat.hi.toFixed(1)})`});
+            }
+            const wl=whitelists.find(w=>w.col===col&&w.values.length>0);
+            if(wl&&!wl.values.map(x=>x.trim().toLowerCase()).includes(String(v).trim().toLowerCase())) issues.push({row:i+2,col,type:"whitelist",msg:`"${v}" not in allowed values`});
+            customRules.forEach(rule=>{
+              if(rule.col===col&&rule.pattern){
+                try{ if(!new RegExp(rule.pattern).test(String(v))) issues.push({row:i+2,col,type:"custom",msg:`Failed "${rule.name||rule.pattern}"`}); }catch{}
+              }
+            });
+          }
+        });
+      }
+      const pct=20+Math.round((i/total)*55);
+      setProgress(pct,`Checking rows… (${i.toLocaleString()} of ${total.toLocaleString()})`);
+      if(i<total){ setTimeout(processBatch,10); return; }
+
+      // Duplicates
+      setTimeout(()=>{
+        if(cancelled)return;
+        if(checkDup){
+          const seen=new Map();
+          rows.forEach((row,idx)=>{
+            const key=selectedCols.map(c=>String(row[c]??"")||"").join("|");
+            if(seen.has(key)) issues.push({row:idx+2,col:"—",type:"duplicate",msg:`Duplicate of row ${seen.get(key)}`});
+            else seen.set(key,idx+2);
+          });
+        }
+        setProgress(78,"Checking for duplicate rows");
+
+        // Row count
+        setTimeout(()=>{
+          if(cancelled)return;
+          setProgress(88,"Validating row counts");
+          if(checkRowCount){
+            if(rowCountMode==="total"){
+              if(!isNaN(rcExpected)&&rcExpected&&rows.length<rcExpected)
+                issues.push({row:"—",col:"—",type:"row_count",msg:`File has ${rows.length} rows, expected at least ${rcExpected}`});
+            } else if(rcGroupCol&&rcCountCol&&headers.includes(rcGroupCol)&&headers.includes(rcCountCol)){
+              const groups={};
+              rows.forEach(row=>{
+                const key=String(row[rcGroupCol]??"").trim();
+                if(!groups[key]) groups[key]={expected:Number(cleanNumeric(row[rcCountCol])),rows:[]};
+                groups[key].rows.push(row);
+              });
+              Object.entries(groups).forEach(([key,{expected,rows:gRows}])=>{
+                let counted=gRows;
+                if(dedupeEnabled&&dedupeCols.length>0){
+                  const seen=new Set();
+                  counted=gRows.filter(row=>{ const dk=dedupeCols.map(c=>String(row[c]??"")||"").join("|"); if(seen.has(dk))return false; seen.add(dk);return true; });
+                }
+                const actual=counted.length;
+                if(!isNaN(expected)&&actual<expected)
+                  issues.push({row:"—",col:rcGroupCol,type:"row_count",msg:`"${key}": expected ${expected} rows, found ${actual}${dedupeEnabled&&dedupeCols.length>0?` (after deduping on: ${dedupeCols.join(", ")})`:""}`});
+              });
+            }
+          }
+
+          setProgress(95,"Preparing results");
+          setTimeout(()=>{
+            if(cancelled)return;
+            results={issues,colStats};
+            filterCol="all"; filterType="all";
+            renderResults();
+            showPane("results");
+            $("subtitle").textContent=`${issues.length} issue${issues.length!==1?"s":""} found across ${rows.length} rows`;
+          },150);
+        },0);
+      },0);
+    }
+    setTimeout(processBatch,0);
+  },50);
+}
+
+// ─── Render results ───────────────────────────────────────────────────────────
+function renderResults() {
+  const issues=results.issues;
+  // Metrics
+  const hs=issues.length===0?100:Math.min(99,Math.floor(100-(issues.length/Math.max(rows.length*selectedCols.length,1))*100));
+  const m=$("metrics"); m.innerHTML="";
+  [{label:"Health score",val:`${hs}%`,color:hs>80?"var(--green)":hs>50?"var(--orange)":"var(--red)"},
+   {label:"Issues found",val:issues.length,color:issues.length===0?"var(--green)":"var(--red)"},
+   {label:"Rows checked",val:rows.length,color:"var(--accent)"},
+   {label:"Cols checked",val:selectedCols.length,color:"var(--accent)"}
+  ].forEach(({label,val,color})=>{
+    const d=el("div",{className:"metric"});
+    d.append(el("div",{className:"metric-label"},[ label]));
+    const v=el("div",{className:"metric-val"},[String(val)]); v.style.color=color;
+    d.append(v); m.append(d);
+  });
+
+  // Type count tags
+  const tc=issues.reduce((a,i)=>{a[i.type]=(a[i.type]||0)+1;return a;},{});
+  const tcEl=$("type-counts"); tcEl.innerHTML="";
+  Object.entries(tc).forEach(([t,cnt])=>{
+    const s=el("span",{className:"tag"},[ `${t}: ${cnt}`]);
+    s.style.cssText=`background:${(ISSUE_CLR[t]||"#999")}28;color:${ISSUE_CLR[t]||"#999"};border:0.5px solid ${(ISSUE_CLR[t]||"#999")}44;font-size:12px`;
+    tcEl.append(s);
+  });
+
+  // File notices
+  const fnIssues=issues.filter(i=>["row_count","missing_col","empty_col"].includes(i.type));
+  const fnEl=$("file-notices"), fnList=$("file-notices-list");
+  fnList.innerHTML="";
+  if(fnIssues.length){ fnEl.classList.remove("hidden"); fnIssues.forEach(issue=>{ const n=el("div",{className:"notice"}); n.append(tag(issue.type,ISSUE_CLR[issue.type]||"#999")); n.append(el("span",{style:{fontSize:"13px",color:"var(--text)"}},[ issue.msg])); fnList.append(n); }); }
+  else fnEl.classList.add("hidden");
+
+  // Column summary
+  const csb=$("col-summary-body"); csb.innerHTML="";
+  selectedCols.forEach((col,i)=>{
+    const stat=results.colStats[col];
+    const missingPct=((stat.missing/stat.total)*100).toFixed(1);
+    const colIssues=issues.filter(x=>x.col===col);
+    const dupCount=issues.filter(x=>x.type==="duplicate").length;
+    const outlierCount=colIssues.filter(x=>x.type==="outlier").length;
+    const overThreshold=$("ck-missing").checked&&parseFloat(missingPct)>Number($("missing-threshold").value);
+    const tr=el("tr",{style:{borderBottom:"1px solid var(--border)",background:i%2?"var(--surface-alt)":"transparent"}});
+    const mColor=overThreshold?"var(--red)":stat.missing>0?"var(--orange)":"var(--green)";
+    tr.innerHTML=`
+      <td style="padding:5px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:#fff">${col}</td>
+      <td style="padding:5px 6px;color:var(--muted)">${stat.type}</td>
+      <td style="padding:5px 6px"><span style="color:${mColor};font-weight:500">${missingPct}%</span><span style="color:var(--muted);margin-left:3px">(${stat.missing})</span></td>
+      <td style="padding:5px 6px"><span style="color:${dupCount>0?"var(--pink)":"var(--muted)"}">${$("ck-dup").checked?dupCount:"—"}</span></td>
+      <td style="padding:5px 6px">${stat.type==="number"&&stat.lo!==undefined?`<span style="color:${outlierCount>0?"var(--accent)":"var(--muted)"}">${outlierCount}</span>`:`<span style="color:var(--muted)">—</span>`}</td>
+      <td style="padding:5px 6px"><span style="color:${colIssues.length>0?"var(--red)":"var(--green)"};font-weight:500">${colIssues.length}</span></td>`;
+    csb.append(tr);
+  });
+
+  // Filters
+  buildFilters();
+  renderIssues();
+
+  // Result preview
+  $("res-preview").innerHTML="";
+  $("res-preview").append(buildPreviewTable(true));
+}
+
+function buildFilters() {
+  const issues=results.issues;
+  const fcEl=$("filter-col"), ftEl=$("filter-type");
+  const allCols=[...new Set(issues.map(i=>i.col))];
+  const allTypes=[...new Set(issues.map(i=>i.type))];
+  fcEl.innerHTML='<option value="all">All</option>';
+  allCols.forEach(c=>{ const o=document.createElement("option");o.value=o.textContent=c;fcEl.append(o); });
+  ftEl.innerHTML='<option value="all">All</option>';
+  allTypes.forEach(t=>{ const o=document.createElement("option");o.value=t;o.textContent=`${t} (${issues.filter(i=>i.type===t).length})`;ftEl.append(o); });
+  fcEl.value=filterCol; ftEl.value=filterType;
+}
+
+function renderIssues() {
+  const issues=results.issues;
+  const filtered=issues.filter(i=>(filterCol==="all"||i.col===filterCol)&&(filterType==="all"||i.type===filterType));
+  const body=$("issues-body"); body.innerHTML="";
+  const noMsg=$("no-issues-msg");
+  const cnt=$("filter-count");
+  cnt.textContent=filtered.length!==issues.length?`(${filtered.length} of ${issues.length} shown)`:"";
+  $("btn-clear-filters").classList.toggle("hidden",filterCol==="all"&&filterType==="all");
+
+  if(!filtered.length){ noMsg.classList.remove("hidden"); return; }
+  noMsg.classList.add("hidden");
+  filtered.forEach((issue,i)=>{
+    const tr=el("tr",{style:{borderBottom:"1px solid var(--border)",background:i%2?"var(--surface-alt)":"transparent"}});
+    const tagEl=tag(issue.type,ISSUE_CLR[issue.type]||"#999");
+    const td4=el("td",{style:{padding:"5px 8px",color:"var(--muted)",whiteSpace:"normal",wordBreak:"break-word"}},[issue.msg]);
+    tr.innerHTML=`<td style="padding:5px 8px;color:var(--muted);white-space:nowrap">${issue.row}</td><td style="padding:5px 8px;white-space:nowrap;color:#fff">${issue.col}</td>`;
+    const td3=el("td",{style:{padding:"5px 8px",whiteSpace:"nowrap"}});
+    td3.append(tagEl);
+    tr.append(td3,td4);
+    body.append(tr);
+  });
+}
+
+function downloadReport() {
+  if(!results)return;
+  const lines=["Row,Column,Issue Type,Message",...results.issues.map(i=>`${i.row},"${i.col}","${i.type}","${i.msg}"`)];
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([lines.join("\n")],{type:"text/csv"}));
+  a.download=`qa_report_${fileName.replace(/\.[^.]+$/,"")}.csv`;a.click();
+}
+
+// ─── Req cols ─────────────────────────────────────────────────────────────────
+function addReqCol(val) {
+  if(!val.trim())return;
+  const list=$("req-cols-list");
+  const s=el("span",{className:"tag req-col-val"});
+  s.dataset.col=val;
+  s.style.cssText=`background:#e0832a28;color:#e0832a;border:0.5px solid #e0832a44;display:inline-flex;align-items:center;gap:4px`;
+  s.append(document.createTextNode(val));
+  const x=el("span",{style:{cursor:"pointer",fontSize:"13px"}},"×");
+  x.onclick=()=>s.remove();
+  s.append(x);
+  list.append(s);
+}
+
+// ─── Whitelists ───────────────────────────────────────────────────────────────
+function addWhitelist() {
+  const col=$("wl-col").value, raw=$("wl-vals").value;
+  if(!col||!raw.trim())return;
+  const values=raw.split(",").map(v=>v.trim()).filter(Boolean);
+  whitelists=whitelists.filter(w=>w.col!==col);
+  whitelists.push({col,values});
+  $("wl-col").value=""; $("wl-vals").value="";
+  renderWhitelists();
+}
+
+function renderWhitelists() {
+  const list=$("wl-list"); list.innerHTML="";
+  whitelists.forEach((w,i)=>{
+    const row=el("div",{className:"rule-row"});
+    row.append(el("span",{style:{fontWeight:"500",color:"var(--yellow)",whiteSpace:"nowrap"}},[ w.col]));
+    const chips=el("div",{style:{display:"flex",flexWrap:"wrap",gap:"4px",flex:"1"}});
+    w.values.forEach(v=>{ const t=tag(v,"#e0c44d");chips.append(t); });
+    const del=el("button",{className:"del-btn"},"×");
+    del.onclick=()=>{ whitelists.splice(i,1); renderWhitelists(); };
+    row.append(chips,del); list.append(row);
+  });
+}
+
+// ─── Custom rules ─────────────────────────────────────────────────────────────
+function addRule() {
+  const col=$("rule-col").value, pattern=$("rule-pattern").value, name=$("rule-name").value;
+  if(!col||!pattern)return;
+  customRules.push({col,pattern,name});
+  $("rule-col").value=""; $("rule-pattern").value=""; $("rule-name").value="";
+  renderRules();
+}
+
+function renderRules() {
+  const list=$("rule-list"); list.innerHTML="";
+  customRules.forEach((r,i)=>{
+    const row=el("div",{className:"rule-row"});
+    row.append(el("span",{style:{fontWeight:"500",color:"var(--accent)"}},[ r.col]));
+    const c=el("code"); c.textContent=r.pattern; row.append(c);
+    if(r.name) row.append(el("span",{style:{color:"var(--muted)"}},[ r.name]));
+    const del=el("button",{className:"del-btn"},"×");
+    del.onclick=()=>{ customRules.splice(i,1); renderRules(); };
+    row.append(del); list.append(row);
+  });
+}
+
+// ─── Dedupe chips ─────────────────────────────────────────────────────────────
+function renderDedupeChips() {
+  const groupCol=$("rc-group-col").value, countCol=$("rc-count-col").value;
+  const wrap=$("dedupe-chips"); wrap.innerHTML="";
+  headers.filter(h=>h!==groupCol&&h!==countCol).forEach(h=>{
+    const active=dedupeCols.includes(h);
+    const b=el("button",{className:"chip"});
+    b.textContent=h;
+    if(active) b.style.cssText=`background:#4dcea022;color:#4dcea0;border-color:#4dcea055`;
+    else b.style.cssText=`background:transparent;color:var(--text);border:1px solid var(--border)`;
+    b.onclick=()=>{ if(dedupeCols.includes(h)) dedupeCols=dedupeCols.filter(c=>c!==h); else dedupeCols.push(h); renderDedupeChips(); };
+    wrap.append(b);
+  });
+  const summary=$("dedupe-summary");
+  if(dedupeCols.length>0){ summary.style.display="block"; summary.textContent=`Counting distinct combinations of: ${dedupeCols.join(", ")} per group.`; }
+  else summary.style.display="none";
+}
+
+// ─── Event wiring ─────────────────────────────────────────────────────────────
+$("file-input").onchange=e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); };
+const dz=$("drop-zone");
+dz.ondragover=e=>{ e.preventDefault(); dz.classList.add("drag"); };
+dz.ondragleave=()=>dz.classList.remove("drag");
+dz.ondrop=e=>{ e.preventDefault(); dz.classList.remove("drag"); if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); };
+
+$("btn-all-cols").onclick=()=>{ selectedCols=[...headers]; renderColChips(); };
+$("btn-no-cols").onclick=()=>{ selectedCols=[]; renderColChips(); };
+$("btn-cancel").onclick=()=>{ cancelled=true; showPane("configure"); };
+$("btn-run").onclick=()=>{ if(selectedCols.length) runQA(); };
+$("btn-back-upload").onclick=()=>{ showPane("upload"); $("subtitle").textContent="Upload a CSV, Excel, or JSON file to get started."; };
+$("btn-download").onclick=downloadReport;
+$("btn-back-config").onclick=()=>{ showPane("configure"); };
+$("btn-new-file").onclick=()=>{
+  rows=[];headers=[];selectedCols=[];results=null;whitelists=[];customRules=[];
+  showPane("upload"); $("subtitle").textContent="Upload a CSV, Excel, or JSON file to get started.";
+};
+
+$("ck-missing").onchange=()=>$("missing-thresh-wrap").classList.toggle("hidden",!$("ck-missing").checked);
+$("ck-colpres").onchange=()=>$("colpres-config").classList.toggle("hidden",!$("ck-colpres").checked);
+$("ck-rowcount").onchange=()=>$("rowcount-config").classList.toggle("hidden",!$("ck-rowcount").checked);
+$("btn-mode-total").onclick=()=>{
+  rowCountMode="total";
+  $("rc-total").classList.remove("hidden"); $("rc-grouped").classList.add("hidden");
+  $("btn-mode-total").style.cssText="background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)55;border-radius:8px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:500";
+  $("btn-mode-grouped").style.cssText="background:transparent;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:500";
+};
+$("btn-mode-grouped").onclick=()=>{
+  rowCountMode="grouped";
+  $("rc-grouped").classList.remove("hidden"); $("rc-total").classList.add("hidden");
+  $("btn-mode-grouped").style.cssText="background:var(--accent)22;color:var(--accent);border:1px solid var(--accent)55;border-radius:8px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:500";
+  $("btn-mode-total").style.cssText="background:transparent;color:var(--text);border:1px solid var(--border);border-radius:8px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:500";
+};
+function updateGroupedExtra() {
+  const gc=$("rc-group-col").value, cc=$("rc-count-col").value;
+  if(gc&&cc){
+    $("rc-grouped-extra").classList.remove("hidden");
+    $("rc-group-desc").innerHTML=`Will check that each unique value in <span style="color:var(--accent)">${gc}</span> has at least as many rows as specified in <span style="color:var(--accent)">${cc}</span>.`;
+    renderDedupeChips();
+  } else $("rc-grouped-extra").classList.add("hidden");
+}
+$("rc-group-col").onchange=updateGroupedExtra;
+$("rc-count-col").onchange=updateGroupedExtra;
+$("ck-dedupe").onchange=()=>{ $("dedupe-config").classList.toggle("hidden",!$("ck-dedupe").checked); renderDedupeChips(); };
+
+$("btn-add-req-col").onclick=()=>{ addReqCol($("new-req-col").value); $("new-req-col").value=""; };
+$("new-req-col").onkeydown=e=>{ if(e.key==="Enter"){ addReqCol($("new-req-col").value); $("new-req-col").value=""; } };
+$("btn-add-wl").onclick=addWhitelist;
+$("btn-add-rule").onclick=addRule;
+
+$("filter-col").onchange=e=>{ filterCol=e.target.value; renderIssues(); };
+$("filter-type").onchange=e=>{ filterType=e.target.value; renderIssues(); };
+$("btn-clear-filters").onclick=()=>{ filterCol="all"; filterType="all"; $("filter-col").value="all"; $("filter-type").value="all"; renderIssues(); };
+
+// Tabs
+document.querySelectorAll(".tabs").forEach(tabsEl=>{
+  tabsEl.querySelectorAll(".tab").forEach(btn=>{
+    btn.onclick=()=>{
+      tabsEl.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+      btn.classList.add("active");
+      const targetId=btn.dataset.tab;
+      // figure out sibling panes
+      const group=targetId.split("-")[0]; // "cfg" or "res"
+      document.querySelectorAll(`[id^="${group}-"]`).forEach(p=>p.classList.toggle("hidden",p.id!==targetId));
+    };
+  });
+});
+</script>
+</body>
+</html>
